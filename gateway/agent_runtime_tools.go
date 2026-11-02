@@ -58,16 +58,17 @@ func toolOutcomeEvent(info ToolExecutionInfo, sessionID, runID string, d time.Du
 // is told.
 const applyPatchIsATool = "apply_patch is a TOOL, not a shell command — bash cannot run it. Call the apply_patch tool directly, with the FULL patch text (*** Begin Patch ... *** End Patch) as its input. Run builds/tests in a separate bash call"
 
-// shellRanApplyPatch matches bash's own "command not found" for apply_patch,
-// wherever it sits in the result: the formatter puts the first output line
-// after its "Output:" label, so the message is not always at a line start.
-// The shell names itself as it was invoked: "bash", "/bin/bash" or Git for
-// Windows' full path, so a path before the name is allowed.
 // questionTimeout is how long ask_user_question waits for an answer. It is a
 // variable so tests do not wait five minutes.
 var questionTimeout = 5 * time.Minute
 
-var shellRanApplyPatch = regexp.MustCompile(`(?m)(?:^|\s)(?:\S*[\\/])?bash(?:\.exe)?: (line \d+: )?apply_patch: command not found`)
+// shellRanApplyPatch matches the shell's own "command not found" for
+// apply_patch, wherever it sits in the result: the formatter puts the first
+// output line after its "Output:" label, so the message is not always at a
+// line start. The shell names itself as it was invoked: "bash", "/bin/bash"
+// or Git for Windows' full path, so a path before the name is allowed. zsh,
+// the user's $SHELL on a Mac, words it "zsh:2: command not found: apply_patch".
+var shellRanApplyPatch = regexp.MustCompile(`(?m)(?:^|\s)(?:\S*[\\/])?(?:bash(?:\.exe)?: (line \d+: )?apply_patch: command not found|zsh(?::\d+)?: command not found: apply_patch)`)
 
 // A TOOL'S OUTPUT NEVER CARRIES A SECRET (live 2026-10-10): asked for a free
 // model, the coder ran `env | grep openrouter` and `cat

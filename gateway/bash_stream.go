@@ -34,7 +34,7 @@ func streamerFor(toolName string) streamingExecutor {
 	}
 }
 
-// bashStreamer streams `bash -c <command>` and formats the result exactly as the
+// bashStreamer streams a command run by the machine's shell (pkg/shell) and formats the result exactly as the
 // non-streaming bash tool did — including the "Command FAILED — fix it" message
 // the coder acts on, and a note when the time or output limit cut a long command short.
 type bashStreamer struct{}
@@ -79,7 +79,7 @@ var (
 	bashStreamFlushEvery  = 100 * time.Millisecond
 )
 
-// runStreamingCommand runs `bash -c command`, calling emit with each new chunk
+// runStreamingCommand runs command in the machine's shell, calling emit with each new chunk
 // of combined stdout/stderr as it is produced (coalesced to at most one call
 // per bashStreamFlushEvery so a flood does not become a flood of events). It
 // returns the full captured output and whether it was cut short by the time or
@@ -129,8 +129,8 @@ func runStreamingCommand(ctx context.Context, command, cwd string, emit func(chu
 		return len(p), nil
 	}}
 
-	// The shell is the machine's (pkg/shell): bash where there is one,
-	// PowerShell on a Windows without it.
+	// The shell is the machine's (pkg/shell): the user's $SHELL, else bash
+	// where there is one, PowerShell on a Windows without it.
 	cmd := shell.Command(cctx, command)
 	// The workdir comes from the harness, not from a cd inside the command.
 	cmd.Dir = cwd

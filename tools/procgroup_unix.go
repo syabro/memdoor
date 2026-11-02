@@ -8,8 +8,10 @@ import (
 )
 
 // ownProcessGroup starts the command in its own process group, so a kill
-// reaches the children (a find or sleep bash spawned), not only bash.
-func ownProcessGroup(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
+// reaches the children (a find or sleep bash spawned), not only bash. It is a
+// new session, as pkg/shell starts it: a new session is a new process group
+// with no controlling terminal, and Setpgid on top of Setsid fails (EPERM).
+func ownProcessGroup(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
 
 // killProcessGroup kills the command and everything it spawned.
 func killProcessGroup(cmd *exec.Cmd) error {

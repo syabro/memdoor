@@ -62,6 +62,35 @@ func TestResolvePicksBashWhereItIsAndPowerShellOnAWindowsWithoutIt(t *testing.T)
 	}
 }
 
+func TestResolvePicksTheUsersShellFromSHELL(t *testing.T) {
+	bash := map[string]string{"bash": "/bin/bash"}
+	cases := []struct {
+		why  string
+		h    host
+		name string
+		prog string
+		args string
+		hint string
+	}{
+		{"zsh, login and interactive", machine("darwin", bash, []string{"/bin/zsh"}, map[string]string{"SHELL": "/bin/zsh"}), Zsh, "/bin/zsh", "-l -i -c", "zsh is not bash"},
+		{"bash, login only", machine("linux", bash, []string{"/usr/bin/bash"}, map[string]string{"SHELL": "/usr/bin/bash"}), Bash, "/usr/bin/bash", "-l -c", ""},
+		{"fish, login only", machine("linux", bash, []string{"/usr/bin/fish"}, map[string]string{"SHELL": "/usr/bin/fish"}), "fish", "/usr/bin/fish", "-l -c", "login shell, fish"},
+		{"SHELL empty", machine("darwin", bash, nil, map[string]string{"SHELL": ""}), Bash, "bash", "-c", ""},
+		{"SHELL names a missing file", machine("darwin", bash, nil, map[string]string{"SHELL": "/opt/gone/zsh"}), Bash, "bash", "-c", ""},
+		{"SHELL missing and no bash", machine("linux", nil, nil, map[string]string{"SHELL": "/opt/gone/zsh"}), Sh, "sh", "-c", "POSIX sh"},
+		{"windows ignores SHELL", machine("windows", map[string]string{"pwsh": "C:/pwsh.exe"}, []string{"/bin/zsh"}, map[string]string{"SHELL": "/bin/zsh"}), PowerShell, "C:/pwsh.exe", "-NoProfile -NonInteractive -Command", "PowerShell"},
+	}
+	for _, c := range cases {
+		got := resolve(c.h)
+		if got.name != c.name || got.prog != c.prog || strings.Join(got.args, " ") != c.args {
+			t.Errorf("%s: got %s %s %v, want %s %s %s", c.why, got.name, got.prog, got.args, c.name, c.prog, c.args)
+		}
+		if h := got.hint(); (c.hint == "") != (h == "") || !strings.Contains(h, c.hint) {
+			t.Errorf("%s: hint %q, want one with %q", c.why, h, c.hint)
+		}
+	}
+}
+
 func TestCommandRunsALineOnThisMachine(t *testing.T) {
 	out, err := Command(context.Background(), "echo shell-ok").Output()
 	if err != nil || !strings.Contains(string(out), "shell-ok") {
