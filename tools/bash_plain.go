@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"memdoor/pkg/shell"
@@ -42,14 +43,13 @@ func plainEnv() []string {
 // error message IS the useful part — so callers report it rather than discard
 // it.
 //
-// A command gets BashTimeout() to finish. Then its whole process group is
+// A command gets timeout to finish (BashTimeoutFor). Then its whole process group is
 // killed — bash and everything it started — and the output so far comes back
 // with the reason. Without this a turn hangs for good on one runaway command:
 // measured 2026-09-25, the coder ran `find / -name "*.log"` and `find ~
 // -maxdepth 4 …` looking for logs; neither returned, the turn never ended, and
 // the finds outlived it by over an hour.
-func runPlainBash(command, dir string) (string, error) {
-	timeout := BashTimeout()
+func runPlainBash(command, dir string, timeout time.Duration) (string, error) {
 	cmd := shell.Command(context.Background(), command)
 	cmd.Dir = dir
 	cmd.Env = plainEnv()
@@ -77,16 +77,54 @@ func runPlainBash(command, dir string) (string, error) {
 		_ = killProcessGroup(cmd)
 		<-done
 		return stripTerminalEscapes([]byte(buf.String())),
-			fmt.Errorf("timed out after %s and was killed; narrow it (a path, -maxdepth, head) or run it in the background", timeout)
+			fmt.Errorf("timed out after %s and was killed; narrow it (a path, -maxdepth, head), run it in the background, or, when it must run longer, pass timeout (seconds, at most %d)", timeout, int(BashTimeoutMax.Seconds()))
 	}
 }
 
-// BashTimeoutLimit is how long a command may run: long enough for a
-// race-enabled test build, short of a hung turn. A var so a test can lower it.
-var BashTimeoutLimit = 300 * time.Second
+// BashTimeoutLimit is how long a command may run when the call names no
+// timeout: long enough for a race-enabled test build, short of a hung turn.
+// BashTimeoutMax is the most a call may ask for: a workflow step that runs a
+// review tool (rejudge) needs more than the default. Both come from the
+// config file (tools.bash, SetBashTimeouts); vars so a test can lower them.
+var (
+	BashTimeoutLimit = 300 * time.Second
+	BashTimeoutMax   = 3600 * time.Second
+)
 
-// BashTimeout is the limit a command runs under.
+// BashTimeout is the limit a command runs under when the call names none.
 func BashTimeout() time.Duration { return BashTimeoutLimit }
+
+// BashTimeoutFor is the limit for one call: the seconds it asked for, at most
+// BashTimeoutMax; the default when it asked for none.
+func BashTimeoutFor(seconds int) time.Duration {
+	if seconds <= 0 {
+		return BashTimeoutLimit
+	}
+	return min(time.Duration(seconds)*time.Second, BashTimeoutMax)
+}
+
+// ParseBashTimeout is the limit a bash call asked for in its timeout field.
+func ParseBashTimeout(input json.RawMessage) time.Duration {
+	var in struct {
+		Timeout int `json:"timeout"`
+	}
+	_ = json.Unmarshal(input, &in)
+	return BashTimeoutFor(in.Timeout)
+}
+
+// SetBashTimeouts sets the default and the maximum from the config file (0
+// keeps the built-in value) and tells the model both in the tool description.
+// Called before the agent runtime copies the tool list.
+func SetBashTimeouts(limit, most time.Duration) {
+	if limit > 0 {
+		BashTimeoutLimit = limit
+	}
+	if most > 0 {
+		BashTimeoutMax = most
+	}
+	BashTimeoutMax = max(BashTimeoutMax, BashTimeoutLimit)
+	BashDefinition.Description = bashDescription()
+}
 
 // stripTerminalEscapes removes ANSI escape sequences, leaving the text.
 //

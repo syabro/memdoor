@@ -294,14 +294,20 @@ func ListFilesWithContext(input json.RawMessage, ctx interface{}) (string, error
 
 // bash tool
 var BashDefinition = ToolDefinition{
-	Name: "bash",
-	Description: "Run ONE shell command and return its output. You are ALREADY in the project " +
-		"directory — never cd to it. Issue a single command, READ its output, then decide the next " +
-		"one: a batch of commands emitted together cannot be steered by what the earlier ones " +
-		"returned, which is how a turn spends itself without learning anything.",
+	Name:                "bash",
+	Description:         bashDescription(),
 	InputSchema:         BashInputSchema,
 	Function:            Bash,            // Legacy function (no sandbox enforcement)
 	FunctionWithContext: BashWithContext, // Sandbox-aware function
+}
+
+func bashDescription() string {
+	return "Run ONE shell command and return its output. You are ALREADY in the project " +
+		"directory — never cd to it. Issue a single command, READ its output, then decide the next " +
+		"one: a batch of commands emitted together cannot be steered by what the earlier ones " +
+		"returned, which is how a turn spends itself without learning anything. " +
+		fmt.Sprintf("A command is killed after %d seconds; for one that runs longer (a full test suite, a review tool), "+
+			"pass timeout in seconds, at most %d.", int(BashTimeoutLimit.Seconds()), int(BashTimeoutMax.Seconds()))
 }
 
 type BashInput struct {
@@ -325,6 +331,9 @@ type BashInput struct {
 	// a path it invented. Setting cmd.Dir says the same thing to the operating
 	// system instead of to a shell that can be talked out of it.
 	Cwd string `json:"-"`
+	// Timeout is read by ParseBashTimeout; the default and the maximum are
+	// in the tool description, which the config file can change.
+	Timeout int `json:"timeout,omitempty" jsonschema_description:"Seconds the command may run before it is killed. Only for a command that runs longer than the default (a full test suite, a review tool); the default and the maximum are in the tool description."`
 }
 
 var BashInputSchema = GenerateSchema[BashInput]()
@@ -421,7 +430,7 @@ func Bash(input json.RawMessage) (string, error) {
 	log.Debug("Executing bash command", slog.String("command", bashInput.Command))
 	// runPlainBash, not exec directly: tool output is read by a model, so it
 	// must be text and not terminal escapes. See bash_plain.go.
-	output, err := runPlainBash(bashInput.Command, bashInput.Cwd)
+	output, err := runPlainBash(bashInput.Command, bashInput.Cwd, ParseBashTimeout(input))
 	if err != nil {
 		return bashFailedOutput(bashInput.Command, output, injectedTurnTask(input), err), nil
 	}
@@ -463,7 +472,7 @@ func BashWithContext(input json.RawMessage, ctx interface{}) (string, error) {
 	log.Debug("Executing bash command", slog.String("command", bashInput.Command))
 	// runPlainBash, not exec directly: tool output is read by a model, so it
 	// must be text and not terminal escapes. See bash_plain.go.
-	output, err := runPlainBash(bashInput.Command, bashInput.Cwd)
+	output, err := runPlainBash(bashInput.Command, bashInput.Cwd, ParseBashTimeout(input))
 	if err != nil {
 		return bashFailedOutput(bashInput.Command, output, injectedTurnTask(input), err), nil
 	}

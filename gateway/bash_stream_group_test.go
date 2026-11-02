@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"memdoor/tools"
 )
 
 // The cap kills what bash started, not only bash. Killing bash alone left a
@@ -20,7 +22,7 @@ func TestRunStreamingCommand_CapKillsChildren(t *testing.T) {
 
 	start := time.Now()
 	out, truncated, _ := runStreamingCommand(context.Background(),
-		"sleep 30 & echo child=$!; wait; echo never", "", func(string) {})
+		"sleep 30 & echo child=$!; wait; echo never", "", tools.BashTimeout(), func(string) {})
 	if !truncated {
 		t.Error("want truncated")
 	}
@@ -47,7 +49,7 @@ func TestRunStreamingCommand_CapStopsForegroundChild(t *testing.T) {
 	bashStreamMaxDuration = 500 * time.Millisecond
 	defer func() { bashStreamMaxDuration = oldD }()
 	start := time.Now()
-	_, truncated, _ := runStreamingCommand(context.Background(), "sleep 30; echo done", "", func(string) {})
+	_, truncated, _ := runStreamingCommand(context.Background(), "sleep 30; echo done", "", tools.BashTimeout(), func(string) {})
 	if !truncated || time.Since(start) > 8*time.Second {
 		t.Fatalf("truncated=%v after %s", truncated, time.Since(start))
 	}
